@@ -1,0 +1,50 @@
+name: Build Fluater APK
+
+on:
+  workflow_dispatch: # Dipicu oleh bot
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.x' # Versi stabil
+          channel: 'stable'
+
+      # Ekstrak zip yang dikirim bot
+      - name: Unzip Source
+        run: unzip source.zip -d ./project_src || true
+      
+      # Pindah ke folder project (asumsi isi zip ada di root atau 1 folder dalam)
+      # Jika zip berisi folder utama, kita cari pubspec.yaml
+      - name: Find Project Dir
+        id: find_dir
+        run: |
+          DIR=$(find . -name "pubspec.yaml" -exec dirname {} \; | head -n 1)
+          echo "DIR_PATH=$DIR" >> $GITHUB_OUTPUT
+          
+      - name: Get Dependencies
+        working-directory: ${{ steps.find_dir.outputs.DIR_PATH }}
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: ${{ steps.find_dir.outputs.DIR_PATH }}
+        run: flutter build apk --release
+
+      # Upload artifact agar bisa didownload bot
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-release
+          path: ${{ steps.find_dir.outputs.DIR_PATH }}/build/app/outputs/flutter-apk/*.apk
