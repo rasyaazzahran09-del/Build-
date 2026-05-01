@@ -1,93 +1,45 @@
-name: Build Fluater APK
+name: Build Flutter APK
 
 on:
-  workflow_dispatch:  # Dipicu oleh bot
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
-    timeout-minutes: 20  # Batas waktu 20 menit
-    
     steps:
-      # 1. Checkout code
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-
-      # 2. Setup Java (Flutter butuh Java untuk Android build)
-      - name: Setup JDK 17
+      - uses: actions/checkout@v3
+      
+      - name: Setup Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # 3. Setup Flutter SDK
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6'  # Versi stabil terbaru
+          flutter-version: '3.19.x'
           channel: 'stable'
-          cache: true
 
-      # 4. Ekstrak ZIP yang dikirim bot
-      - name: Extract Source ZIP
-        run: |
-          echo "📦 Mengekstrak source.zip..."
-          unzip -o source.zip -d ./project_src || { echo "❌ Gagal ekstrak ZIP"; exit 1; }
-          ls -la ./project_src
+      - name: Unzip Source
+        run: unzip source.zip -d ./project || true
+        
+      - name: Find Project
+        id: find_dir
+        run: echo "DIR=$(find . -name pubspec.yaml -exec dirname {} \; | head -1)" >> $GITHUB_OUTPUT
+        
+      - name: Get Dependencies
+        working-directory: ${{ steps.find_dir.outputs.DIR }}
+        run: flutter pub get
 
-      # 5. Cari folder project (yang ada pubspec.yaml)
-      - name: Find Project Directory
-        id: find_project
-        run: |
-          PROJECT_DIR=$(find . -name "pubspec.yaml" -not -path "./node_modules/*" | head -n 1 | xargs dirname)
-          
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "❌ Tidak menemukan pubspec.yaml!"
-            exit 1
-          fi
-          
-          echo "📂 Project ditemukan di: $PROJECT_DIR"
-          echo "DIR_PATH=$PROJECT_DIR" >> $GITHUB_OUTPUT
-          ls -la $PROJECT_DIR
+      - name: Build APK
+        working-directory: ${{ steps.find_dir.outputs.DIR }}
+        run: flutter build apk --release --target-platform android-arm64
 
-      # 6. Download dependencies
-      - name: Install Dependencies
-        working-directory: ${{ steps.find_project.outputs.DIR_PATH }}
-        run: |
-          flutter pub get
-          flutter --version
-
-      # 7. BUILD APK (Yang PENTING!)
-      - name: Build Release APK
-        working-directory: ${{ steps.find_project.outputs.DIR_PATH }}
-        run: |
-          echo "🔨 Memulai build APK..."
-          flutter build apk --release \
-            --target-platform android-arm64 \
-            --shrink \
-            --obfuscate \
-            --split-debug-info=build/debug
-          
-          echo "✅ Build selesai!"
-          ls -lh build/app/outputs/flutter-apk/
-
-      # 8. Upload hasil APK sebagai Artifact
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v3
         with:
-          name: fluater-apk-release
-          path: ${{ steps.find_project.outputs.DIR_PATH }}/build/app/outputs/flutter-apk/*.apk
-          retention-days: 1  # Hapus setelah 1 hari
-          if-no-files-found: error
-
-      # 9. Cleanup (optional)
-      - name: Show Build Summary
-        if: always()
-        run: |
-          echo "=========================================="
-          echo "📊 BUILD SUMMARY"
-          echo "=========================================="
-          echo "Status: ${{ job.status }}"
-          echo "Time: $(date)"
-          echo "=========================================="
+          name: app-release
+          path: ${{ steps.find_dir.outputs.DIR }}/build/app/outputs/flutter-apk/*.apk
+          retention-days: 1
